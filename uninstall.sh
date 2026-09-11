@@ -28,14 +28,7 @@ if [[ -x "$PREFIX/.venv-classifier/bin/python" ]]; then
   "$PREFIX/.venv-classifier/bin/python" "$PREFIX/stopclaude.py" 2>/dev/null || true
   "$PREFIX/.venv-classifier/bin/python" "$PREFIX/stopcodex.py" 2>/dev/null || true
 fi
-# kill by port just in case
-for port in 8787 8788; do
-  pids=$(lsof -ti tcp:$port -sTCP:LISTEN 2>/dev/null || true)
-  if [[ -n "${pids:-}" ]]; then
-    echo "killing listener on :$port ($pids)"
-    kill $pids 2>/dev/null || true
-  fi
-done
+# The stop scripts validate PID ownership. Never kill arbitrary port listeners.
 
 # 2) Restore Claude Code BASE_URL if still pointing at proxy
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"

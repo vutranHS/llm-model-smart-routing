@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,6 +18,17 @@ SETTINGS = Path.home() / ".claude/settings.json"
 STATE = HERE / ".smart_routing_state.json"
 PIDFILE = HERE / ".smart_proxy.pid"
 PORT = int(os.environ.get("SMART_PROXY_PORT", "8787"))
+
+
+def is_proxy_process(pid: int) -> bool:
+    """Avoid terminating an unrelated process after PID reuse."""
+    try:
+        command = subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "command="], text=True
+        )
+        return any(name in command for name in ("smart_proxy.py", "start_smart_routing.py"))
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def load_settings() -> dict:
@@ -32,6 +44,10 @@ def kill_proxy() -> None:
     if PIDFILE.exists():
         try:
             pid = int(PIDFILE.read_text().strip())
+            if not is_proxy_process(pid):
+                print(f"refusing to stop unrelated or missing pid={pid}")
+                PIDFILE.unlink(missing_ok=True)
+                return
             os.kill(pid, signal.SIGTERM)
             print(f"sent SIGTERM to proxy pid={pid}")
         except ProcessLookupError:
@@ -39,18 +55,6 @@ def kill_proxy() -> None:
         except Exception as exc:
             print(f"kill via pidfile failed: {exc}")
         PIDFILE.unlink(missing_ok=True)
-    # by port (in case pidfile stale)
-    try:
-        out = os.popen(f"lsof -ti tcp:{PORT} -sTCP:LISTEN").read().strip()
-        for pid_s in out.split():
-            pid = int(pid_s)
-            try:
-                os.kill(pid, signal.SIGTERM)
-                print(f"sent SIGTERM to listener pid={pid} on :{PORT}")
-            except Exception:
-                pass
-    except Exception:
-        pass
 
 
 def main() -> int:

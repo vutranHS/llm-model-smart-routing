@@ -27,8 +27,8 @@ Model mapping (cost-aware, Anthropic official positioning):
     Sonnet 5    $2/$10    speed + intelligence default
 
   Rules:
-    software + hard                         → fable   (chỉ chỗ này worth $10/$50)
-    any scene + hard (không phải software)  → opus5
+    software + hard                         → fable   (only case worth $10/$50)
+    any scene + hard (except software)  → opus5
     software|design|research + medium       → opus48
     office|media|other + medium             → sonnet
     easy (any scene)                        → sonnet
@@ -97,12 +97,14 @@ def extract_text(messages: list) -> str:
 
 class Proxy:
     def __init__(self, *, classifier: QueryClassifier, upstream: str, upstream_key: str | None,
-                 fable: str, opus5: str, opus48: str, sonnet: str, log_path: Path | None):
+                 fable: str, opus5: str, opus48: str, sonnet: str, log_path: Path | None,
+                 log_prompts: bool = False):
         self.clf = classifier
         self.upstream = upstream.rstrip("/")
         self.upstream_key = upstream_key
         self.names = {"fable": fable, "opus5": opus5, "opus48": opus48, "sonnet": sonnet}
         self.log_path = log_path
+        self.log_prompts = log_prompts
         self._log_f = open(log_path, "a", encoding="utf-8") if log_path else None
 
     def log(self, event: dict) -> None:
@@ -115,9 +117,10 @@ class Proxy:
 
     def classify_and_route(self, body: dict) -> tuple[str, dict]:
         text = extract_text(body.get("messages") or [])
-        # truncate to classifier max (256 tokens ≈ ~800 chars safe)
-        snippet = text[:800]
-        info = {"text_preview": snippet[:120]}
+        snippet = text
+        info = {}
+        if self.log_prompts:
+            info["text_preview"] = snippet[:120]
         if not snippet.strip():
             info["reason"] = "empty"
             return self.names["sonnet"], info
@@ -359,7 +362,7 @@ class Handler(BaseHTTPRequestHandler):
                 "status": e.code,
                 "original_model": original_model,
                 "routed_model": real_model,
-                "body": err_body[:400].decode("utf-8", "replace"),
+                "body_bytes": len(err_body),
             })
             return
         except Exception as exc:
@@ -413,6 +416,8 @@ def main(argv=None) -> int:
     p.add_argument("--sonnet", default="claude-sonnet-5", help="easy + medium office ($2/$10)")
     p.add_argument("--classifier-dir", default=None, help="Query classifier asset dir")
     p.add_argument("--log", default=str(Path(__file__).resolve().parent / "smart_proxy.log.jsonl"))
+    p.add_argument("--log-prompts", action="store_true",
+                   help="Include a 120-character prompt preview in local logs")
     args = p.parse_args(argv)
 
     upstream = args.upstream
@@ -451,6 +456,7 @@ def main(argv=None) -> int:
         opus48=args.opus48,
         sonnet=args.sonnet,
         log_path=Path(args.log),
+        log_prompts=args.log_prompts,
     )
 
     class H(Handler):

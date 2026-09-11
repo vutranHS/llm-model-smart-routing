@@ -142,12 +142,13 @@ def extract_prompt_text(body: dict) -> str:
 
 class Proxy:
     def __init__(self, *, classifier: QueryClassifier, upstream: str, models: dict,
-                 log_path: Path | None, safe_tokens: int):
+                 log_path: Path | None, safe_tokens: int, log_prompts: bool = False):
         self.clf = classifier
         self.upstream = upstream.rstrip("/")
         self.models = models  # tier → model id
         self.safe_tokens = safe_tokens
         self.log_path = log_path
+        self.log_prompts = log_prompts
         self._log_f = open(log_path, "a", encoding="utf-8") if log_path else None
 
     def log(self, event: dict) -> None:
@@ -159,9 +160,11 @@ class Proxy:
             self._log_f.flush()
 
     def route(self, body: dict) -> tuple[str, str, dict]:
-        text = extract_prompt_text(body)[:800]
+        text = extract_prompt_text(body)
         est = estimate_tokens(body)
-        info: dict = {"est_tokens": est, "text_preview": text[:120]}
+        info: dict = {"est_tokens": est}
+        if self.log_prompts:
+            info["text_preview"] = text[:120]
 
         if not text.strip():
             info["reason"] = "empty"
@@ -349,7 +352,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(err_body)
             self.proxy.log({"event": "upstream_error", "status": e.code,
-                            "body": err_body[:400].decode("utf-8", "replace")})
+                            "body_bytes": len(err_body)})
             return
         except Exception as exc:
             self._send_json(502, {"error": {"message": str(exc)}})
@@ -403,6 +406,8 @@ def main(argv=None) -> int:
     p.add_argument("--safe-tokens", type=int, default=SAFE_TOKENS)
     p.add_argument("--classifier-dir", default=None)
     p.add_argument("--log", default=str(Path(__file__).resolve().parent / "codex_smart_proxy.log.jsonl"))
+    p.add_argument("--log-prompts", action="store_true",
+                   help="Include a 120-character prompt preview in local logs")
     args = p.parse_args(argv)
 
     upstream = args.upstream or os.environ.get("CODEX_UPSTREAM")
@@ -447,7 +452,8 @@ def main(argv=None) -> int:
     clf = QueryClassifier(clf_dir)
     models = {"astra": args.astra, "sol": args.sol, "terra": args.terra, "luna": args.luna}
     proxy = Proxy(classifier=clf, upstream=args.upstream, models=models,
-                  log_path=Path(args.log), safe_tokens=args.safe_tokens)
+                  log_path=Path(args.log), safe_tokens=args.safe_tokens,
+                  log_prompts=args.log_prompts)
 
     class H(Handler):
         pass
