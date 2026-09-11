@@ -1,0 +1,116 @@
+{
+  "checkpoint": "ckpt/20260824-small-pruned20-vocab203k-embint8-raw",
+  "run_id": "20260824-small-pruned20-recover-01",
+  "source_epoch": 0,
+  "base_name": "mmBERT-small-pruned20",
+  "opset": 17,
+  "temperatures": {
+    "scene": 1.3294458389282227,
+    "difficulty": 1.2427260875701904
+  },
+  "outputs_are_calibrated_probabilities": true,
+  "preprocessing": {
+    "max_length": 256,
+    "truncation": "head_tail_token",
+    "unicode_normalization": true,
+    "head_ratio": 0.5,
+    "n_special_single": 2,
+    "n_special_pair": 3,
+    "special_layout": {
+      "prefix": [
+        2
+      ],
+      "suffix": [
+        1
+      ],
+      "pair_prefix": [
+        2
+      ],
+      "pair_separator": [
+        1
+      ],
+      "pair_suffix": [
+        1
+      ]
+    },
+    "tokenizer_class": "TokenizersBackend",
+    "vocab_size": 256000
+  },
+  "label_space": {
+    "scenes": [
+      "office",
+      "software",
+      "design",
+      "media",
+      "research",
+      "other"
+    ],
+    "difficulties": [
+      "easy",
+      "medium",
+      "hard"
+    ],
+    "none_scene": "other"
+  },
+  "parameters": {
+    "total": 116720669,
+    "embedding": 78159360,
+    "embedding_scales": 203540,
+    "embedding_storage_bytes": 78566440,
+    "embedding_share": 0.6696,
+    "encoder_non_embedding": 38354304,
+    "heads": 3465
+  },
+  "tokenizer_files": [
+    "tokenizer.json",
+    "tokenizer_config.json"
+  ],
+  "pad_token_id": 0,
+  "validation_metrics_of_source_checkpoint": {
+    "accuracy": 0.7381,
+    "scene_macro_f1": 0.7997,
+    "difficulty_macro_f1": 0.7657,
+    "other_recall": 0.883,
+    "zh_en_scene_f1_gap": 0.0948,
+    "worst_language_scene_f1_gap": 0.1946
+  },
+  "export_notes": {
+    "fp16_cast_nodes_repaired": 169,
+    "mixed_batch_check": {
+      "fp32": {
+        "checked_shapes": [
+          [
+            2,
+            256
+          ]
+        ],
+        "scene_row0_max_prob": 0.963578
+      },
+      "fp16": {
+        "checked_shapes": [
+          [
+            2,
+            256
+          ]
+        ],
+        "scene_row0_max_prob": 0.963659
+      }
+    }
+  },
+  "variants": {
+    "fp32": {
+      "file": "model_fp32.onnx",
+      "bytes": 233559886,
+      "mb": 233.6,
+      "sha256": "688358cfb84f45193ab0e0a912ce74b1bff173d02735d160b53da978e93a14c8",
+      "quantized_op_types": null
+    },
+    "fp16": {
+      "file": "model_fp16.onnx",
+      "bytes": 157028981,
+      "mb": 157.0,
+      "sha256": "30a68d6e5e95e380b8525c7a2cab035859e779baf526ae0e7b81b4e7d5a82e10",
+      "quantized_op_types": null
+    }
+  }
+}
