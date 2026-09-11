@@ -47,6 +47,15 @@ def wait_health(timeout: float = 20.0) -> bool:
     return False
 
 
+def provider_setting(text: str, provider: str, key: str) -> str:
+    """Read a quoted setting from a model provider section."""
+    match = re.search(
+        r'\[model_providers\.' + re.escape(provider) + r'\][^[]*?'
+        + re.escape(key) + r'\s*=\s*"([^"]+)"', text, re.S,
+    )
+    return match.group(1) if match else ""
+
+
 def patch_config() -> None:
     text = CONFIG.read_text()
     # Save original once — read whatever provider/base_url is active now
@@ -55,16 +64,23 @@ def patch_config() -> None:
         provider = pm.group(1) if pm else "9router"
         if provider == "smart":
             provider = "9router"  # already switched; keep previous convention
-        m = re.search(
-            r'\[model_providers\.' + re.escape(provider) + r'\][^[]*?base_url\s*=\s*"([^"]+)"',
-            text, re.S,
-        )
-        original = m.group(1) if m else ""
+        original = provider_setting(text, provider, "base_url")
+        env_key = provider_setting(text, provider, "env_key")
+        if not env_key:
+            raise ValueError(f"model provider {provider!r} has no env_key")
         STATE.write_text(json.dumps(
-            {"original_base_url": original, "original_provider": provider},
+            {"original_base_url": original, "original_provider": provider,
+             "original_env_key": env_key},
             indent=2,
         ) + "\n")
         print(f"saved original provider={provider} base_url={original or '(unset)'}")
+
+    state = json.loads(STATE.read_text())
+    env_key = state.get("original_env_key") or provider_setting(
+        text, state.get("original_provider") or "", "env_key"
+    )
+    if not env_key:
+        raise ValueError("cannot determine env_key for the original Codex provider")
 
     # Ensure [model_providers.smart] exists and model_provider = "smart"
     if "[model_providers.smart]" not in text:
@@ -72,7 +88,7 @@ def patch_config() -> None:
 [model_providers.smart]
 name = "Smart Router"
 base_url = "{PROXY_URL}"
-env_key = "NINEROUTER_API_KEY"
+env_key = "{env_key}"
 wire_api = "responses"
 stream_idle_timeout_ms = 500000
 '''
@@ -85,6 +101,11 @@ stream_idle_timeout_ms = 500000
         text,
         count=1,
         flags=re.S,
+    )
+
+    text = re.sub(
+        r'(\[model_providers\.smart\][^[]*?env_key\s*=\s*")[^"]+(")',
+        rf'\g<1>{env_key}\g<2>', text, count=1, flags=re.S,
     )
 
     # switch model_provider
@@ -114,7 +135,7 @@ def main() -> int:
     print(f"  other hard        → gpt-5.6-sol   $4/$20   effort=high")
     print(f"  medium tech       → gpt-5.6-terra $2/$12   effort=medium")
     print(f"  easy / office     → gpt-5.6-luna  $0.2/$1.2 effort=low")
-    print(f"  >200000 tokens     → demote tier (né 272K pricing cliff)")
+    print(f"  >200000 tokens     → demote tier (avoid the 272K pricing cliff)")
     print()
     if args.dry_run:
         return 0

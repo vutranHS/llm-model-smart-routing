@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import unicodedata
 from pathlib import Path
 
 import numpy as np
@@ -46,7 +47,8 @@ class QueryClassifier:
         self.model_dir = Path(model_dir)
         self.max_length = max_length
         self.tokenizer = Tokenizer.from_file(str(self.model_dir / "tokenizer.json"))
-        self.tokenizer.enable_truncation(max_length=max_length)
+        # Match the preprocessing used to validate the exported model.
+        self.tokenizer.no_truncation()
         self.session = ort.InferenceSession(
             str(self.model_dir / "model_fp16.onnx"),
             providers=["CPUExecutionProvider"],
@@ -55,14 +57,26 @@ class QueryClassifier:
     def classify(self, texts: list[str]) -> list[dict]:
         if isinstance(texts, str):
             texts = [texts]
-        encs = [self.tokenizer.encode(t) for t in texts]
-        max_len = min(self.max_length, max(len(e.ids) for e in encs))
-        input_ids = np.zeros((len(encs), max_len), dtype=np.int64)
-        attention_mask = np.zeros((len(encs), max_len), dtype=np.int64)
-        for i, e in enumerate(encs):
-            n = min(len(e.ids), max_len)
-            input_ids[i, :n] = e.ids[:n]
-            attention_mask[i, :n] = 1
+        if not texts:
+            return []
+        encodings = [
+            self.tokenizer.encode(unicodedata.normalize("NFC", text))
+            for text in texts
+        ]
+        token_rows = []
+        for encoding in encodings:
+            ids = encoding.ids
+            if len(ids) > self.max_length:
+                head = self.max_length // 2
+                tail = self.max_length - head
+                ids = ids[:head] + ids[-tail:]
+            token_rows.append(ids)
+        max_len = max(len(ids) for ids in token_rows)
+        input_ids = np.zeros((len(token_rows), max_len), dtype=np.int64)
+        attention_mask = np.zeros((len(token_rows), max_len), dtype=np.int64)
+        for i, ids in enumerate(token_rows):
+            input_ids[i, :len(ids)] = ids
+            attention_mask[i, :len(ids)] = 1
 
         scene_probs, diff_probs = self.session.run(
             ["scene_probs", "difficulty_probs"],

@@ -25,6 +25,11 @@ echo "=== Smart Routing Install ==="
 echo "  source : $SRC_DIR"
 echo "  prefix : $PREFIX"
 
+if ! command -v rsync >/dev/null 2>&1; then
+  echo "ERROR: rsync is required." >&2
+  exit 1
+fi
+
 # 1) Copy files
 mkdir -p "$PREFIX"
 rsync -a --exclude '.venv-classifier' --exclude '*.log' --exclude '*.log.jsonl' \
@@ -44,7 +49,7 @@ if [[ ! -x "$PREFIX/.venv-classifier/bin/python" ]]; then
   "$PY" -m venv "$PREFIX/.venv-classifier"
 fi
 "$PREFIX/.venv-classifier/bin/pip" install -q --upgrade pip
-"$PREFIX/.venv-classifier/bin/pip" install -q onnxruntime tokenizers numpy
+"$PREFIX/.venv-classifier/bin/pip" install -q -r "$PREFIX/requirements.txt"
 echo "deps ok: onnxruntime, tokenizers, numpy"
 
 # 2b) ONNX weights (GitHub Release asset)

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -16,10 +17,25 @@ PIDFILE = HERE / ".codex_smart_proxy.pid"
 PORT = int(os.environ.get("CODEX_SMART_PORT", "8788"))
 
 
+def is_proxy_process(pid: int) -> bool:
+    """Avoid terminating an unrelated process after PID reuse."""
+    try:
+        command = subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "command="], text=True
+        )
+        return any(name in command for name in ("codex_smart_proxy.py",))
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def kill_proxy() -> None:
     if PIDFILE.exists():
         try:
             pid = int(PIDFILE.read_text().strip())
+            if not is_proxy_process(pid):
+                print(f"refusing to stop unrelated or missing pid={pid}")
+                PIDFILE.unlink(missing_ok=True)
+                return
             os.kill(pid, signal.SIGTERM)
             print(f"SIGTERM proxy pid={pid}")
         except ProcessLookupError:
@@ -27,16 +43,6 @@ def kill_proxy() -> None:
         except Exception as exc:
             print(f"kill failed: {exc}")
         PIDFILE.unlink(missing_ok=True)
-    try:
-        out = os.popen(f"lsof -ti tcp:{PORT} -sTCP:LISTEN").read().strip()
-        for pid_s in out.split():
-            try:
-                os.kill(int(pid_s), signal.SIGTERM)
-                print(f"SIGTERM listener pid={pid_s} :{PORT}")
-            except Exception:
-                pass
-    except Exception:
-        pass
 
 
 def main() -> int:
