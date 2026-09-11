@@ -19,15 +19,30 @@ Upstream của bạn (đọc từ config — không hardcode)
 
 ## Cài mới
 
+### Cách 1 — full tarball (code + ONNX, 1 bước)
+
+```bash
+curl -L -o sr.tar.gz \
+  https://github.com/vutranHS/llm-model-smart-routing/releases/download/classifier-v1/llm-model-smart-routing-full-v1.tar.gz
+tar -xzf sr.tar.gz
+cd llm-model-smart-routing
+./install.sh
+source ~/.zshrc
+```
+
+### Cách 2 — git clone + fetch weights
+
 ```bash
 git clone https://github.com/vutranHS/llm-model-smart-routing.git
 cd llm-model-smart-routing
-./fetch_classifier.sh          # copy/download ONNX ~150MB (không nằm trong git)
+./fetch_classifier.sh          # tải ONNX ~150MB từ Release (sha256 verify)
 ./install.sh
 source ~/.zshrc
 ```
 
 `install.sh` copy về `~/.smart-routing/`, tạo venv, thêm alias `smartclaude` / `stopclaude` / `smartcodex` / `stopcodex`.
+
+Weights / full bundle: [Release classifier-v1](https://github.com/vutranHS/llm-model-smart-routing/releases/tag/classifier-v1)
 
 ---
 
