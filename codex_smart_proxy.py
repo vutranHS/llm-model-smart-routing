@@ -42,7 +42,7 @@ SAFE_TOKENS = 200_000          # stay under 272K pricing cliff
 LONG_CTX_PRICING = 272_000
 
 # (scene_set, difficulty) → (tier, effort)
-# effort: medium | high | xhigh | max
+# effort: medium | high | xhigh
 BASE_RULES = [
     # Hard software gets the strongest model and effort.
     ({"software"}, {"hard"}, "astra", "high"),
@@ -56,7 +56,7 @@ def pick_base(scene: str, difficulty: str) -> tuple[str, str]:
     for scenes, diffs, tier, effort in BASE_RULES:
         if scene in scenes and difficulty in diffs:
             return tier, effort
-    return "terra", "low"
+    return "terra", "medium"
 
 
 def demote_for_tokens(tier: str, est_tokens: int) -> tuple[str, str]:
@@ -156,13 +156,13 @@ class Proxy:
 
         if not text.strip():
             info["reason"] = "empty"
-            return self.models["terra"], "low", info
+            return self.models["terra"], "medium", info
 
         try:
             r = self.clf.classify([text])[0]
         except Exception as exc:
             info["reason"] = f"classifier_error:{exc}"
-            return self.models["terra"], "low", info
+            return self.models["terra"], "medium", info
 
         tier, effort = pick_base(r["scene"], r["difficulty"])
         info.update({
@@ -180,7 +180,7 @@ class Proxy:
             info["demote"] = demote_note
         tier = new_tier
 
-        if est > 100_000 and tier == "terra" and effort in ("low", "medium"):
+        if est > 100_000 and tier == "terra" and effort == "medium":
             effort = "high"
             info["effort_bump"] = "long_ctx_terra_high"
 

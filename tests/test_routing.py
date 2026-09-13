@@ -63,6 +63,18 @@ wire_api = "responses"
             self.assertEqual(state["original_env_key"], "CUSTOM_API_KEY")
             self.assertEqual(updated.count("[model_providers.smart]"), 1)
 
+    def test_codex_fallback_uses_terra_medium(self):
+        class BrokenClassifier:
+            def classify(self, texts):
+                raise RuntimeError("classifier unavailable")
+
+        proxy = codex_smart_proxy.Proxy(
+            classifier=BrokenClassifier(), upstream="https://example.test",
+            models={"astra": "a", "sol": "s", "terra": "t"}, log_path=None, safe_tokens=200_000,
+        )
+        model, effort, _ = proxy.route({"input": "route this"})
+        self.assertEqual((model, effort), ("t", "medium"))
+
 
 if __name__ == "__main__":
     unittest.main()
