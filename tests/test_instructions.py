@@ -174,6 +174,33 @@ class InstructionTests(unittest.TestCase):
         self.assertIn('model_provider = "custom"', config.read_text())
         self.assertIn('model_instructions_file = "./my-custom.md"', config.read_text())
 
+    def test_recovers_upstream_when_smart_is_already_active(self):
+        config = CONFIG + '''
+[model_providers.smart]
+base_url = "http://127.0.0.1:8788/v1"
+env_key = "CUSTOM_API_KEY"
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            config_path, state_path = tmp / "config.toml", tmp / "state.json"
+            config_path.write_text(config)
+            with patch.object(smartcodex, "CONFIG", config_path), \
+                    patch.object(smartcodex, "STATE", state_path), \
+                    patch.object(smartcodex, "PIDFILE", tmp / "proxy.pid"), \
+                    patch.object(smartcodex, "LOG", tmp / "proxy.log"), \
+                    patch.object(smartcodex, "HERE", tmp), \
+                    patch.object(smartcodex, "proxy_alive", return_value=None), \
+                    patch.object(smartcodex, "wait_health", return_value=True), \
+                    patch.object(smartcodex.subprocess, "Popen") as start, \
+                    patch.object(sys, "argv", ["smartcodex", "--no-instruct"]), \
+                    redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                start.return_value.pid = 123
+                self.assertEqual(smartcodex.main(), 0)
+            self.assertIn("https://example.test", start.call_args.args[0])
+            state = json.loads(state_path.read_text())
+            self.assertEqual(state["original_provider"], "custom")
+            self.assertEqual(state["original_base_url"], "https://example.test/v1")
+
     def test_http_handler_uses_final_model_for_stream_and_nonstream(self):
         class Classifier:
             scene, difficulty = "software", "hard"

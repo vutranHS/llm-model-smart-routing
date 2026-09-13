@@ -58,6 +58,16 @@ def provider_setting(text: str, provider: str, key: str) -> str:
     return match.group(1) if match else ""
 
 
+def fallback_provider(text: str) -> tuple[str, str]:
+    """Find the first non-local provider when a previous router owns `smart`."""
+    for match in re.finditer(r"^\[model_providers\.([^]]+)\]$(.*?)(?=^\[|\Z)", text, re.M | re.S):
+        provider, block = match.groups()
+        url = provider_setting(f"[model_providers.{provider}]" + block, provider, "base_url")
+        if provider != "smart" and url and "127.0.0.1" not in url and "localhost" not in url:
+            return provider, url
+    return "", ""
+
+
 def patch_config(use_instruct: bool | None = None) -> None:
     text = CONFIG.read_text()
     # Save original once — read whatever provider/base_url is active now
@@ -65,7 +75,9 @@ def patch_config(use_instruct: bool | None = None) -> None:
         pm = re.search(r'^model_provider\s*=\s*"([^"]+)"', text, re.M)
         provider = pm.group(1) if pm else "9router"
         if provider == "smart":
-            provider = "9router"  # already switched; keep previous convention
+            provider, _ = fallback_provider(text)
+            if not provider:
+                raise ValueError("cannot find a non-local provider to replace smart")
         original = provider_setting(text, provider, "base_url")
         env_key = provider_setting(text, provider, "env_key")
         if not env_key:
@@ -174,7 +186,9 @@ def main() -> int:
     if not original_url:
         pm = re.search(r'^model_provider\s*=\s*"([^"]+)"', text, re.M)
         provider = pm.group(1) if pm else None
-        if provider and provider != "smart":
+        if provider == "smart":
+            _, original_url = fallback_provider(text)
+        elif provider:
             m = re.search(
                 r'\[model_providers\.' + re.escape(provider) + r'\][^[]*?base_url\s*=\s*"([^"]+)"',
                 text, re.S,
