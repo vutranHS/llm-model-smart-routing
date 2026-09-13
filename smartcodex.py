@@ -151,9 +151,9 @@ def main() -> int:
     print(f"  proxy listen : {PROXY_URL}")
     print(f"  config       : {CONFIG}")
     print(f"  software+hard     → gpt-6-astra   $10/$50  effort=high")
-    print(f"  other hard        → gpt-5.6-sol   $4/$20   effort=high")
-    print(f"  medium tech       → gpt-5.6-terra $2/$12   effort=medium")
-    print(f"  easy / office     → gpt-5.6-luna  $0.2/$1.2 effort=low")
+    print(f"  other hard        → gpt-5.6-sol   $4/$20   effort=xhigh")
+    print(f"  medium            → gpt-5.6-terra $2/$12   effort=high")
+    print(f"  easy              → gpt-5.6-terra $2/$12   effort=medium")
     print(f"  >200000 tokens     → demote tier (avoid the 272K pricing cliff)")
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
     use_instruct = args.instruct

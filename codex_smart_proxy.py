@@ -12,7 +12,6 @@ Pricing (short-context, per 1M in/out) — official OpenAI:
   gpt-6-astra   $10 / $50   flagship
   gpt-5.6-sol   $4  / $20   strong
   gpt-5.6-terra $2  / $12   mid
-  gpt-5.6-luna  $0.2/$1.2   cheap
   ALL: input >272K → 2x input, 1.5x output on FULL request.
 
 Token rule: if estimated input > SAFE_TOKENS (default 200k), drop a tier
@@ -42,21 +41,14 @@ from codex_instructions import apply_instructions, load_instructions  # noqa: E4
 SAFE_TOKENS = 200_000          # stay under 272K pricing cliff
 LONG_CTX_PRICING = 272_000
 
-# tier order cheap → expensive
-TIERS = ["luna", "terra", "sol", "astra"]
-
 # (scene_set, difficulty) → (tier, effort)
-# effort: none | low | medium | high | xhigh
+# effort: medium | high | xhigh | max
 BASE_RULES = [
-    # software hard → astra high (the only place astra is worth $10/$50)
+    # Hard software gets the strongest model and effort.
     ({"software"}, {"hard"}, "astra", "high"),
-    # other hard → sol high
-    ({"design", "research", "office", "media", "other"}, {"hard"}, "sol", "high"),
-    # medium tech → terra medium
-    ({"software", "design", "research"}, {"medium"}, "terra", "medium"),
-    # medium office / easy → luna low
-    ({"office", "media", "other"}, {"medium"}, "luna", "low"),
-    ({"office", "media", "design", "research", "software", "other"}, {"easy"}, "luna", "low"),
+    ({"design", "research", "office", "media", "other"}, {"hard"}, "sol", "xhigh"),
+    ({"office", "media", "design", "research", "software", "other"}, {"medium"}, "terra", "high"),
+    ({"office", "media", "design", "research", "software", "other"}, {"easy"}, "terra", "medium"),
 ]
 
 
@@ -64,22 +56,14 @@ def pick_base(scene: str, difficulty: str) -> tuple[str, str]:
     for scenes, diffs, tier, effort in BASE_RULES:
         if scene in scenes and difficulty in diffs:
             return tier, effort
-    return "luna", "low"
+    return "terra", "low"
 
 
 def demote_for_tokens(tier: str, est_tokens: int) -> tuple[str, str]:
     """If input is huge, drop a tier so 2x-price still cheaper than astra 1x."""
     if est_tokens <= SAFE_TOKENS:
         return tier, ""
-    idx = TIERS.index(tier) if tier in TIERS else 0
-    # long context: never sit on astra; drop at least one tier
-    new_idx = min(idx, 1) if idx >= 2 else idx
-    # extra demote if extremely long
-    if est_tokens > 500_000:
-        new_idx = min(new_idx, 0)  # luna
-    elif est_tokens > 350_000:
-        new_idx = min(new_idx, 1)  # terra
-    return TIERS[new_idx], f"demoted_for_tokens:{est_tokens}"
+    return "terra", f"demoted_for_tokens:{est_tokens}"
 
 
 def estimate_tokens(body: dict) -> int:
@@ -172,13 +156,13 @@ class Proxy:
 
         if not text.strip():
             info["reason"] = "empty"
-            return self.models["luna"], "low", info
+            return self.models["terra"], "low", info
 
         try:
             r = self.clf.classify([text])[0]
         except Exception as exc:
             info["reason"] = f"classifier_error:{exc}"
-            return self.models["luna"], "low", info
+            return self.models["terra"], "low", info
 
         tier, effort = pick_base(r["scene"], r["difficulty"])
         info.update({
@@ -196,12 +180,11 @@ class Proxy:
             info["demote"] = demote_note
         tier = new_tier
 
-        # long context + cheap tier → bump effort (luna-max pattern)
-        if est > 100_000 and tier in ("luna", "terra") and effort in ("low", "medium"):
+        if est > 100_000 and tier == "terra" and effort in ("low", "medium"):
             effort = "high"
-            info["effort_bump"] = "long_ctx_luna_high"
+            info["effort_bump"] = "long_ctx_terra_high"
 
-        model = self.models.get(tier, self.models["luna"])
+        model = self.models.get(tier, self.models["terra"])
         info["tier"] = tier
         info["effort"] = effort
         return model, effort, info
@@ -412,7 +395,6 @@ def main(argv=None) -> int:
     p.add_argument("--astra", default="gpt-6-astra")
     p.add_argument("--sol", default="gpt-5.6-sol")
     p.add_argument("--terra", default="gpt-5.6-terra")
-    p.add_argument("--luna", default="gpt-5.6-luna")
     p.add_argument("--safe-tokens", type=int, default=SAFE_TOKENS)
     p.add_argument("--classifier-dir", default=None)
     p.add_argument("--log", default=str(Path(__file__).resolve().parent / "codex_smart_proxy.log.jsonl"))
@@ -462,7 +444,7 @@ def main(argv=None) -> int:
 
     print(f"loading classifier from {clf_dir} ...", file=sys.stderr)
     clf = QueryClassifier(clf_dir)
-    models = {"astra": args.astra, "sol": args.sol, "terra": args.terra, "luna": args.luna}
+    models = {"astra": args.astra, "sol": args.sol, "terra": args.terra}
     instructions = {}
     if args.instruct:
         try:
@@ -481,7 +463,7 @@ def main(argv=None) -> int:
     server = ThreadingHTTPServer((args.host, args.port), H)
     print(f"codex smart proxy on http://{args.host}:{args.port}/v1", file=sys.stderr)
     print(f"  upstream = {args.upstream}", file=sys.stderr)
-    print(f"  astra={args.astra}  sol={args.sol}  terra={args.terra}  luna={args.luna}", file=sys.stderr)
+    print(f"  astra={args.astra}  sol={args.sol}  terra={args.terra}", file=sys.stderr)
     print(f"  safe_tokens={args.safe_tokens}  (pricing cliff {LONG_CTX_PRICING})", file=sys.stderr)
     try:
         server.serve_forever()

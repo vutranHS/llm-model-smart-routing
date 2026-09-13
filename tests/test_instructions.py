@@ -212,13 +212,13 @@ env_key = "CUSTOM_API_KEY"
         clf = Classifier()
         proxy = codex_smart_proxy.Proxy(classifier=clf, upstream="https://example.test",
                                        models={"astra": "gpt-6-astra", "sol": "gpt-5.6-sol",
-                                               "terra": "gpt-5.6-terra", "luna": "gpt-5.6-luna"},
+                                               "terra": "gpt-5.6-terra"},
                                        log_path=None, safe_tokens=200_000, instructions=PROMPTS)
-        for scene, difficulty, size, expected in (("software", "hard", 1, "gpt-6-astra"),
-                                                   ("research", "hard", 1, "gpt-5.6-sol"),
-                                                   ("software", "medium", 1, "gpt-5.6-terra"),
-                                                   ("office", "easy", 1, "gpt-5.6-luna"),
-                                                   ("software", "hard", 800_000, "gpt-5.6-terra")):
+        for scene, difficulty, size, expected, effort in (("software", "hard", 1, "gpt-6-astra", "high"),
+                                                           ("research", "hard", 1, "gpt-5.6-sol", "xhigh"),
+                                                           ("software", "medium", 1, "gpt-5.6-terra", "high"),
+                                                           ("office", "easy", 1, "gpt-5.6-terra", "medium"),
+                                                           ("software", "hard", 800_000, "gpt-5.6-terra", "high")):
             clf.scene, clf.difficulty = scene, difficulty
             for stream in (False, True):
                 body = {"model": "gpt-5.6-sol", "input": "x" * size,
@@ -239,6 +239,7 @@ env_key = "CUSTOM_API_KEY"
                     handler.do_POST()
                 forwarded = json.loads(send.call_args.args[0].data)
                 self.assertEqual(forwarded["model"], expected)
+                self.assertEqual(forwarded["reasoning"]["effort"], effort)
                 if expected in PROMPTS:
                     self.assertEqual(forwarded["instructions"], "CORE\n\n" + PROMPTS[expected])
                 else:
