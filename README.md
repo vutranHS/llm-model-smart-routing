@@ -43,6 +43,38 @@ Restart the corresponding CLI session after enabling or disabling routing.
 Claude uses the loopback proxy at `127.0.0.1:8787`; Codex uses port `8788`.
 The original endpoints and Codex provider environment key are preserved.
 
+### Optional Codex instructions
+
+The first interactive `smartcodex` setup asks whether to use model-specific
+instructions (`y/N`, default **no**). The choice is saved for subsequent starts.
+Without a terminal, instructions default to off unless previously enabled or
+explicitly requested. `--dry-run` never prompts, downloads, or changes settings.
+
+```bash
+smartcodex --instruct       # enable without the question
+smartcodex --no-instruct    # disable without the question
+# If the proxy is already running, stop it before changing this option:
+stopcodex
+smartcodex --instruct
+```
+
+Opting in downloads two checksum-pinned ZIPs from
+[MDX-Tom/gpt-instruct](https://github.com/MDX-Tom/gpt-instruct) into
+`.codex_instructions/` inside the install directory. Downloads happen only during
+setup; subsequent starts can use the verified cache offline. A failed download or
+checksum check aborts setup without starting the proxy or changing Codex config.
+These are optional third-party prompts; review them before enabling.
+
+After routing, the proxy uses Astra v1 only for `gpt-6-astra`, and Sol v45 only
+for `gpt-5.6-sol`. Terra and Luna have no bundled instruct and keep the
+client-provided instructions. If a long-context request is demoted from Astra
+to Terra, it therefore also stops receiving Astra instruct.
+The proxy preserves unrelated client instructions, tools, and user messages,
+replacing only exact copies of these bundled prompts in `instructions` or
+developer/system input messages. Custom variants are not removed automatically.
+Your existing `model_instructions_file` is left untouched; disabling this option
+leaves all client instructions unchanged. Restart the Codex session after setup.
+
 Prompt text and upstream error bodies are not logged by default. Pass
 `--log-prompts` only when a local 120-character preview is explicitly wanted.
 

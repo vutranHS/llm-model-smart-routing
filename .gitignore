@@ -17,6 +17,7 @@ codex_smart_proxy.log.jsonl
 .codex_smart_state.json
 .smart_proxy.pid
 .codex_smart_proxy.pid
+.codex_instructions/
 
 # Classifier weights (>100MB GitHub limit) — run fetch_classifier.sh
 query-classifier/model_fp16.onnx

@@ -6,6 +6,7 @@ Codex → this proxy → your OpenAI-compatible upstream via POST /v1/responses.
 Rewrites:
   - body.model           (scene + difficulty + token budget)
   - body.reasoning.effort (low | medium | high | xhigh)
+  - bundled model instructions (only with --instruct)
 
 Pricing (short-context, per 1M in/out) — official OpenAI:
   gpt-6-astra   $10 / $50   flagship
@@ -35,6 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from classify import QueryClassifier  # noqa: E402
+from codex_instructions import apply_instructions, load_instructions  # noqa: E402
 
 # No default upstream — resolve from --upstream, CODEX_UPSTREAM, state, or codex config
 SAFE_TOKENS = 200_000          # stay under 272K pricing cliff
@@ -142,13 +144,15 @@ def extract_prompt_text(body: dict) -> str:
 
 class Proxy:
     def __init__(self, *, classifier: QueryClassifier, upstream: str, models: dict,
-                 log_path: Path | None, safe_tokens: int, log_prompts: bool = False):
+                 log_path: Path | None, safe_tokens: int, log_prompts: bool = False,
+                 instructions: dict[str, str] | None = None):
         self.clf = classifier
         self.upstream = upstream.rstrip("/")
         self.models = models  # tier → model id
         self.safe_tokens = safe_tokens
         self.log_path = log_path
         self.log_prompts = log_prompts
+        self.instructions = instructions or {}
         self._log_f = open(log_path, "a", encoding="utf-8") if log_path else None
 
     def log(self, event: dict) -> None:
@@ -317,6 +321,11 @@ class Handler(BaseHTTPRequestHandler):
         body = dict(body)
         original_model = body.get("model")
         body["model"] = real_model
+        try:
+            apply_instructions(body, real_model, self.proxy.instructions)
+        except ValueError as exc:
+            self._send_json(400, {"error": {"message": str(exc)}})
+            return
 
         # Rewrite reasoning.effort (Responses API)
         reasoning = dict(body.get("reasoning") or {})
@@ -327,6 +336,7 @@ class Handler(BaseHTTPRequestHandler):
         info["original_model"] = original_model
         info["original_effort"] = original_effort
         info["routed_model"] = real_model
+        info["model_instructions"] = real_model in self.proxy.instructions
         info["stream"] = bool(body.get("stream"))
         info["classify_ms"] = round((time.time() - t0) * 1000, 1)
         self.proxy.log({"event": "route", **info})
@@ -408,6 +418,8 @@ def main(argv=None) -> int:
     p.add_argument("--log", default=str(Path(__file__).resolve().parent / "codex_smart_proxy.log.jsonl"))
     p.add_argument("--log-prompts", action="store_true",
                    help="Include a 120-character prompt preview in local logs")
+    p.add_argument("--instruct", action="store_true",
+                   help="Use cached model prompts downloaded by smartcodex --instruct")
     args = p.parse_args(argv)
 
     upstream = args.upstream or os.environ.get("CODEX_UPSTREAM")
@@ -451,9 +463,17 @@ def main(argv=None) -> int:
     print(f"loading classifier from {clf_dir} ...", file=sys.stderr)
     clf = QueryClassifier(clf_dir)
     models = {"astra": args.astra, "sol": args.sol, "terra": args.terra, "luna": args.luna}
+    instructions = {}
+    if args.instruct:
+        try:
+            prompts = load_instructions()
+        except (OSError, ValueError) as exc:
+            print(f"ERROR: cannot load instructions: {exc}; run smartcodex --instruct first", file=sys.stderr)
+            return 1
+        instructions = {models["astra"]: prompts["astra"], models["sol"]: prompts["sol"]}
     proxy = Proxy(classifier=clf, upstream=args.upstream, models=models,
                   log_path=Path(args.log), safe_tokens=args.safe_tokens,
-                  log_prompts=args.log_prompts)
+                  log_prompts=args.log_prompts, instructions=instructions)
 
     class H(Handler):
         pass

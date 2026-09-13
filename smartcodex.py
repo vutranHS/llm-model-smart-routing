@@ -15,6 +15,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from codex_instructions import load_instructions
+
 HERE = Path(__file__).resolve().parent
 CONFIG = Path.home() / ".codex/config.toml"
 STATE = HERE / ".codex_smart_state.json"
@@ -56,7 +58,7 @@ def provider_setting(text: str, provider: str, key: str) -> str:
     return match.group(1) if match else ""
 
 
-def patch_config() -> None:
+def patch_config(use_instruct: bool | None = None) -> None:
     text = CONFIG.read_text()
     # Save original once — read whatever provider/base_url is active now
     if not STATE.exists():
@@ -115,6 +117,9 @@ stream_idle_timeout_ms = 500000
         text = 'model_provider = "smart"\n' + text
 
     CONFIG.write_text(text)
+    if use_instruct is not None:
+        state["use_instruct"] = use_instruct
+        STATE.write_text(json.dumps(state, indent=2) + "\n")
     print(f"config.toml → model_provider=smart  base_url={PROXY_URL}")
 
 
@@ -123,6 +128,8 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=PORT)
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--instruct", action=argparse.BooleanOptionalAction, default=None,
+                   help="Use model-specific gpt-instruct prompts (asks on first interactive setup)")
     args = p.parse_args()
 
     PORT = args.port
@@ -136,6 +143,22 @@ def main() -> int:
     print(f"  medium tech       → gpt-5.6-terra $2/$12   effort=medium")
     print(f"  easy / office     → gpt-5.6-luna  $0.2/$1.2 effort=low")
     print(f"  >200000 tokens     → demote tier (avoid the 272K pricing cliff)")
+    state = json.loads(STATE.read_text()) if STATE.exists() else {}
+    use_instruct = args.instruct
+    if use_instruct is None:
+        use_instruct = bool(state.get("use_instruct", False))
+        if not args.dry_run and "use_instruct" not in state and sys.stdin.isatty():
+            print("Optional third-party prompts: MDX-Tom/gpt-instruct (downloaded and checksum-verified).")
+            while True:
+                try:
+                    answer = input("Dung instruct theo model / Use model-specific instructions? [y/N]: ").strip().lower()
+                except EOFError:
+                    answer = ""
+                if answer in ("", "y", "yes", "n", "no"):
+                    use_instruct = answer in ("y", "yes")
+                    break
+                print("Please answer y or n.")
+    print(f"  instructions      : {'ON (Astra v1; Sol v45 only)' if use_instruct else 'OFF (client instructions unchanged)'}")
     print()
     if args.dry_run:
         return 0
@@ -167,13 +190,25 @@ def main() -> int:
     print(f"upstream = {original_url}")
 
     pid = proxy_alive()
+    if pid and use_instruct != bool(state.get("use_instruct", False)):
+        print("ERROR: run stopcodex first, then smartcodex with --instruct or --no-instruct",
+              file=sys.stderr)
+        return 1
+    if use_instruct:
+        try:
+            load_instructions(download=True)
+        except (OSError, ValueError) as exc:
+            print(f"ERROR: cannot load instructions: {exc}", file=sys.stderr)
+            return 1
     if pid:
         print(f"proxy already running pid={pid}")
     else:
         py = str(HERE / ".venv-classifier/bin/python")
         cmd = [py, str(HERE / "codex_smart_proxy.py"), "--port", str(PORT), "--upstream", original_url]
-        log_f = open(LOG, "a", encoding="utf-8")
-        proc = subprocess.Popen(cmd, stdout=log_f, stderr=log_f, start_new_session=True, cwd=str(HERE))
+        if use_instruct:
+            cmd.append("--instruct")
+        with open(LOG, "a", encoding="utf-8") as log_f:
+            proc = subprocess.Popen(cmd, stdout=log_f, stderr=log_f, start_new_session=True, cwd=str(HERE))
         PIDFILE.write_text(str(proc.pid))
         print(f"starting proxy pid={proc.pid}")
         if not wait_health():
@@ -186,7 +221,7 @@ def main() -> int:
             return 1
         print("proxy healthy ✓")
 
-    patch_config()
+    patch_config(use_instruct)
     print()
     print("Codex smart routing ON. Restart Codex session to take effect.")
     print("Disable with: stopcodex")
