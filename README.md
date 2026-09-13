@@ -26,7 +26,8 @@ For the full bundle, verify its checksum before extracting:
 
 ```bash
 curl -L -o sr.tar.gz https://github.com/vutranHS/llm-model-smart-routing/releases/download/classifier-v1/llm-model-smart-routing-full-v1.tar.gz
-echo "4b6cd693bf499ef5e58c04872a1eb26bf101f0582d3215aeafdf713b6a54aced  sr.tar.gz" | shasum -a 256 -c -
+curl -L -o sr.tar.gz.sha256 https://github.com/vutranHS/llm-model-smart-routing/releases/download/classifier-v1/llm-model-smart-routing-full-v1.tar.gz.sha256
+shasum -a 256 -c sr.tar.gz.sha256
 tar -xzf sr.tar.gz
 ```
 
