@@ -56,10 +56,12 @@ wire_api = "responses"
             with patch.object(smartcodex, "CONFIG", config_path), \
                     patch.object(smartcodex, "STATE", state_path):
                 smartcodex.patch_config()
+                smartcodex.patch_config()
             updated = config_path.read_text()
             state = json.loads(state_path.read_text())
             self.assertIn('env_key = "CUSTOM_API_KEY"', updated)
             self.assertEqual(state["original_env_key"], "CUSTOM_API_KEY")
+            self.assertEqual(updated.count("[model_providers.smart]"), 1)
 
 
 if __name__ == "__main__":

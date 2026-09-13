@@ -24,11 +24,26 @@ echo "=== Smart Routing Uninstall ==="
 echo "  prefix: $PREFIX"
 
 # 1) Stop proxies if scripts exist
+CLAUDE_PID=""
+CODEX_PID=""
+[[ -f "$PREFIX/.smart_proxy.pid" ]] && CLAUDE_PID=$(cat "$PREFIX/.smart_proxy.pid" 2>/dev/null || true)
+[[ -f "$PREFIX/.codex_smart_proxy.pid" ]] && CODEX_PID=$(cat "$PREFIX/.codex_smart_proxy.pid" 2>/dev/null || true)
 if [[ -x "$PREFIX/.venv-classifier/bin/python" ]]; then
   "$PREFIX/.venv-classifier/bin/python" "$PREFIX/stopclaude.py" 2>/dev/null || true
   "$PREFIX/.venv-classifier/bin/python" "$PREFIX/stopcodex.py" 2>/dev/null || true
 fi
 # The stop scripts validate PID ownership. Never kill arbitrary port listeners.
+force_stop() {
+  local pid="$1" pattern="$2" command
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+  command=$(ps -p "$pid" -o command= 2>/dev/null || true)
+  [[ "$command" == *"$pattern"* ]] || return 0
+  kill -0 "$pid" 2>/dev/null || return 0
+  kill -KILL "$pid" 2>/dev/null || true
+  echo "force-stopped proxy pid=$pid"
+}
+force_stop "$CLAUDE_PID" "smart_proxy.py"
+force_stop "$CODEX_PID" "codex_smart_proxy.py"
 
 # 2) Restore Claude Code BASE_URL if still pointing at proxy
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
@@ -71,6 +86,7 @@ from pathlib import Path
 p = Path.home()/".codex/config.toml"
 state = Path(os.environ.get("SMART_ROUTING_HOME", Path.home()/".smart-routing"))/".codex_smart_state.json"
 text = p.read_text()
+changed = False
 if not re.search(r'^model_provider\s*=\s*"smart"', text, re.M):
     print("Codex provider not smart — leave as-is")
 else:
@@ -95,6 +111,16 @@ else:
         print(f"restored Codex model_provider={provider} base_url={original}")
     else:
         print(f"restored Codex model_provider={provider} (base_url unchanged)")
+    changed = True
+
+# Remove only the provider section created by Smart Router, not a user's own
+# section named "smart".
+smart = re.search(r'^\[model_providers\.smart\]$(.*?)(?=^\[|\Z)', text, re.M | re.S)
+if smart and re.search(r'^name\s*=\s*"Smart Router"\s*$', smart.group(1), re.M):
+    text = text[:smart.start()] + text[smart.end():]
+    changed = True
+    print("removed Codex Smart Router provider section")
+if changed:
     p.write_text(text)
 PY
 fi
@@ -104,7 +130,11 @@ ZSHRC="$HOME/.zshrc"
 MARK_BEGIN="# >>> smart-routing >>>"
 MARK_END="# <<< smart-routing <<<"
 if [[ "$KEEP_ZSHRC" -eq 0 && -f "$ZSHRC" ]] && grep -q "$MARK_BEGIN" "$ZSHRC"; then
-  sed -i '' "/$MARK_BEGIN/,/$MARK_END/d" "$ZSHRC"
+  awk -v begin="$MARK_BEGIN" -v end="$MARK_END" '
+    $0 == begin { drop=1; next }
+    drop && $0 == end { drop=0; next }
+    !drop
+  ' "$ZSHRC" > "$ZSHRC.tmp" && mv "$ZSHRC.tmp" "$ZSHRC"
   echo "removed aliases from ~/.zshrc"
 fi
 

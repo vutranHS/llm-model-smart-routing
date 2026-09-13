@@ -79,12 +79,19 @@ MARK_END="# <<< smart-routing <<<"
 if [[ "$SKIP_ZSHRC" -eq 1 ]]; then
   echo "skip zshrc"
 else
-  # remove old block if any
+  # Remove our old (including incomplete) block before writing the one block.
   if [[ -f "$ZSHRC" ]] && grep -q "$MARK_BEGIN" "$ZSHRC"; then
-    # portable sed in-place (macOS needs '')
-    sed -i '' "/$MARK_BEGIN/,/$MARK_END/d" "$ZSHRC"
+    awk -v begin="$MARK_BEGIN" -v end="$MARK_END" '
+      $0 == begin { drop=1; next }
+      drop && $0 == end { drop=0; next }
+      !drop
+    ' "$ZSHRC" > "$ZSHRC.tmp" && mv "$ZSHRC.tmp" "$ZSHRC"
   fi
-  cat >> "$ZSHRC" <<EOF
+  # Do not shadow aliases the user already manages outside our block.
+  if grep -Eq '^[[:space:]]*(function[[:space:]]+)?(smartclaude|stopclaude|smartcodex|stopcodex)[[:space:]]*\(\)' "$ZSHRC" 2>/dev/null; then
+    echo "smart-routing aliases already exist in ~/.zshrc; leave them unchanged"
+  else
+    cat >> "$ZSHRC" <<EOF
 
 $MARK_BEGIN
 # Installed by smart-routing install.sh
@@ -95,9 +102,10 @@ smartcodex()  { "\$SMART_ROUTING_DIR/.venv-classifier/bin/python" "\$SMART_ROUTI
 stopcodex()   { "\$SMART_ROUTING_DIR/.venv-classifier/bin/python" "\$SMART_ROUTING_DIR/stopcodex.py" "\$@"; }
 $MARK_END
 EOF
-  echo "aliases added to ~/.zshrc"
-  echo "  smartclaude / stopclaude"
-  echo "  smartcodex  / stopcodex"
+    echo "aliases added to ~/.zshrc"
+    echo "  smartclaude / stopclaude"
+    echo "  smartcodex  / stopcodex"
+  fi
 fi
 
 echo
